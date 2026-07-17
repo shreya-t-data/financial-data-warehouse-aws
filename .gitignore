@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+
+# Terraform - never commit state or plans, may contain secrets/ARNs
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!terraform.tfvars.example
+
+
+# Environment
+.env 
+
+
+# Lambda build artifacts
+src/lambdas/**/*.zip
+
+
+# OS / logs
+.DS_store
+*.log
