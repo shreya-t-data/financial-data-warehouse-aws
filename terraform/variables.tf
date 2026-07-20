@@ -43,3 +43,9 @@ variable "s3_lifecycle_expiration_days" {
     type        = number
     default     = "45"
 }
+
+variable "tickers" {
+    description = "AI/tech ticker basket to track"
+    type        = list(string)
+    default     = ["NVDA", "MSFT", "GOOGL", "META", "AMD", "AVGO", "PLTR", "TSLA"]
+}

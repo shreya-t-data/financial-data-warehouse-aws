@@ -18,3 +18,11 @@ output "account_id" {
     description = "AWS account ID in use"
     value       = data.aws_caller_identity.current.account_id
 }
+
+output "sec_edgar_ingest_arn" {
+    value = aws_lambda_function.sec_edgar_ingest.arn
+}
+
+output "stooq_ingest_arn" {
+    value = aws_lambda_function.stooq_ingest.arn
+}
