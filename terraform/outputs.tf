@@ -14,7 +14,7 @@ output "lambda_role_arn" {
     value       = aws_iam_role.lambda_exec.arn
 }
 
-output "accout_id" {
+output "account_id" {
     description = "AWS account ID in use"
     value       = data.aws_caller_identity.current.account_id
 }

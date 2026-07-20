@@ -23,7 +23,7 @@ locals {
     }
     # Bucket names are globally unique across all AWS accounts, so we suffix
     # with the account ID to guarantee that without hardcoding a random string.
-    bucket_name = "${var.project_name}-raw_${data.aws_caller_identity.current.account}"
+    bucket_name = "${var.project_name}-raw-${data.aws_caller_identity.current.account_id}"
 }
 
 
@@ -53,7 +53,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "raw_data" {
     bucket = aws_s3_bucket.raw_data.id
 
     rule {
-        id  = "expire-raw-after-${var.s3_lifecycle_expiration_days}=days"
+        id  = "expire-raw-after-${var.s3_lifecycle_expiration_days}-days"
         status = "Enabled"
 
         filter {} # applies to every object in the bucket
