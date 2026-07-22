@@ -1,14 +1,11 @@
 """
 Bridge script: S3 (bronze/raw landing zone) -> local Postgres raw schema.
 
-Idempotent -- tracks loaded S3 object keys in raw.loaded_files so 
+Idempotent -- tracks loaded S3 object keys in raw.loaded_files so
 re-running never duplicates data. Upserts on natural keys so a
 re-processed file (or a corrected re-run) never creates duplicate rows.
 """
 
-
-import csv
-import io
 import json
 import logging
 import os
@@ -20,7 +17,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 AWS_PROFILE = os.environ.get("AWS_PROFILE", "financial-warehouse")
@@ -33,7 +30,6 @@ DB_CONFIG = {
     "user": os.environ.get("DB_USER", "shreya"),
     "password": os.environ["POSTGRES_PASSWORD"],
 }
-
 
 session = boto3.Session(profile_name=AWS_PROFILE)
 s3 = session.client("s3")
@@ -58,7 +54,7 @@ CREATE TABLE IF NOT EXISTS raw.sec_companies (
     loaded_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE TABLE IF NOT EXISTS raw.stooq_prices (
+CREATE TABLE IF NOT EXISTS raw.stock_prices (
     ticker      TEXT NOT NULL,
     date        DATE NOT NULL,
     open        NUMERIC,
@@ -79,7 +75,7 @@ def ensure_schema(conn):
 
 
 def list_new_keys(conn, prefix: str) -> list[str]:
-    """ List every object under a prefix, minus ones already recorded as loaded."""
+    """List every object under a prefix, minus ones already recorded as loaded."""
     with conn.cursor() as cur:
         cur.execute("SELECT s3_key FROM raw.loaded_files")
         already_loaded = {row[0] for row in cur.fetchall()}
@@ -104,7 +100,7 @@ def mark_loaded(conn, key: str):
     conn.commit()
 
 
-def load_sec_companies(conn, key: str):
+def load_sec_companies(conn, key: str) -> int:
     obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
     records = json.loads(obj["Body"].read().decode("utf-8"))
 
@@ -115,11 +111,15 @@ def load_sec_companies(conn, key: str):
             r.get("company_name"),
             str(r.get("sic")) if r.get("sic") is not None else None,
             r.get("sic_description"),
-            json.dumps(r.get("former_names")),
+            json.dumps(r.get("former_names", [])),
             r.get("fetched_at"),
         )
         for r in records
     ]
+
+    if not rows:
+        logger.warning("No records parsed from %s", key)
+        return 0
 
     with conn.cursor() as cur:
         psycopg2.extras.execute_values(
@@ -137,45 +137,44 @@ def load_sec_companies(conn, key: str):
                 fetched_at = EXCLUDED.fetched_at,
                 loaded_at = now()
             """,
-            rows
+            rows,
         )
     conn.commit()
     logger.info("Upserted %d rows into raw.sec_companies from %s", len(rows), key)
+    return len(rows)
 
 
-def load_stooq_prices(conn, key: str):
-    # key looks like: bronze/stooq/dt=2026-07-20/NVDA.scv
-    ticker = key.split("/")[-1].replace(".csv", "")
+def load_stock_prices(conn, key: str) -> int:
+    # key looks like: bronze/alpha_vantage/dt=2026-07-22/NVDA.json
+    ticker = key.split("/")[-1].replace(".json", "")
 
     obj = s3.get_object(Bucket=S3_BUCKET, Key=key)
-    text = obj["Body"].read().decode("utf-8")
-    reader = csv.DictReader(io.StringIO(text))
+    series = json.loads(obj["Body"].read().decode("utf-8"))
 
     rows = []
-    for r in reader:
+    for date_str, values in series.items():
         try:
             rows.append((
                 ticker,
-                r["Date"],
-                float(r["Open"]),
-                float(r["High"]),
-                float(r["Low"]),
-                float(r["Close"]),
-                int(float(r["Volume"])),
+                date_str,
+                float(values["1. open"]),
+                float(values["2. high"]),
+                float(values["3. low"]),
+                float(values["4. close"]),
+                int(values["5. volume"]),
             ))
         except (KeyError, ValueError) as e:
-            logger.warning("Skipping malformed row in %s: %s (%s)", key, r, e)
+            logger.warning("Skipping malformed entry in %s for date %s: %s (%s)", key, date_str, values, e)
 
     if not rows:
         logger.warning("No valid rows parsed from %s", key)
-        return
+        return 0
 
     with conn.cursor() as cur:
         psycopg2.extras.execute_values(
             cur,
             """
-            INSERT INTO raw.stooq_prices
-                (ticker, date, open, high, low, close, volume)
+            INSERT INTO raw.stock_prices (ticker, date, open, high, low, close, volume)
             VALUES %s
             ON CONFLICT (ticker, date) DO UPDATE SET
                 open = EXCLUDED.open,
@@ -185,10 +184,11 @@ def load_stooq_prices(conn, key: str):
                 volume = EXCLUDED.volume,
                 loaded_at = now()
             """,
-            rows
+            rows,
         )
     conn.commit()
-    logger.info("Upserted %d rows into raw.stooq_prices from %s", len(rows), key)
+    logger.info("Upserted %d rows into raw.stock_prices from %s", len(rows), key)
+    return len(rows)
 
 
 def main():
@@ -197,16 +197,18 @@ def main():
 
     sec_keys = list_new_keys(conn, "bronze/sec_edgar/")
     for key in sec_keys:
-        load_sec_companies(conn, key)
-        mark_loaded(conn, key)
+        rows_loaded = load_sec_companies(conn, key)
+        if rows_loaded:
+            mark_loaded(conn, key)
 
-    stooq_keys = list_new_keys(conn, "bronze/stooq/")
-    for key in stooq_keys:
-        load_stooq_prices(conn, key)
-        mark_loaded(conn, key)
+    price_keys = list_new_keys(conn, "bronze/alpha_vantage/")
+    for key in price_keys:
+        rows_loaded = load_stock_prices(conn, key)
+        if rows_loaded:
+            mark_loaded(conn, key)
 
     conn.close()
-    logger.info("Bridge run complete: %d SEC file(s), %d Stooq file(s) processed", len(sec_keys), len(stooq_keys))
+    logger.info("Bridge run complete: %d SEC file(s), %d price file(s) processed", len(sec_keys), len(price_keys))
 
 
 if __name__ == "__main__":
