@@ -30,7 +30,7 @@ resource "aws_iam_role_policy" "scheduler_invoke_permission" {
                 Action = ["lambda:InvokeFunction"]
                 Resource = [
                     aws_lambda_function.sec_edgar_ingest.arn,
-                    aws_lambda_function.stooq_ingest.arn
+                    aws_lambda_function.alpha_vantage_ingest.arn
                 ]
             }
         ]
@@ -57,8 +57,8 @@ resource "aws_scheduler_schedule" "sec_edgar_daily" {
     }
 }
 
-resource "aws_scheduler_schedule" "stooq_daily" {
-  name       = "stooq-ingest-daily"
+resource "aws_scheduler_schedule" "alpha_vantage_daily" {
+  name       = "alpha_vantage-ingest-daily"
   group_name = "default"
 
   flexible_time_window {
@@ -69,7 +69,7 @@ resource "aws_scheduler_schedule" "stooq_daily" {
     schedule_expression_timezone = "UTC"
 
     target {
-        arn      = aws_lambda_function.stooq_ingest.arn
+        arn      = aws_lambda_function.alpha_vantage_ingest.arn
         role_arn = aws_iam_role.scheduler_invoke.arn
     }
 }

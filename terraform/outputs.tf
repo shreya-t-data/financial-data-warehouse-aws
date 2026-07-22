@@ -23,6 +23,6 @@ output "sec_edgar_ingest_arn" {
     value = aws_lambda_function.sec_edgar_ingest.arn
 }
 
-output "stooq_ingest_arn" {
-    value = aws_lambda_function.stooq_ingest.arn
+output "alpha_vantage_ingest_arn" {
+    value = aws_lambda_function.alpha_vantage_ingest.arn
 }

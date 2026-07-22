@@ -49,3 +49,9 @@ variable "tickers" {
     type        = list(string)
     default     = ["NVDA", "MSFT", "GOOGL", "META", "AMD", "AVGO", "PLTR", "TSLA"]
 }
+
+variable "alpha_vantage_api_key" {
+    description = "Alpha Vantage API key for daily price data"
+    type        = string
+    sensitive   = true
+}

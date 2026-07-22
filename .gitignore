@@ -25,3 +25,7 @@ src/lambdas/**/*.zip
 # OS / logs
 .DS_store
 *.log
+
+# Terraform build artifacts and plan files
+terraform/build/
+tfplan
